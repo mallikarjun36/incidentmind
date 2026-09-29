@@ -17,10 +17,24 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [rootCause, setRootCause] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [runbook, setRunbook] = useState(
+    "Database Connection Pool Exhaustion"
+  );
+  const [runbookWorked, setRunbookWorked] = useState(true);
+  const [notes, setNotes] = useState("");
+
+  const [savingPostmortem, setSavingPostmortem] = useState(false);
+  const [postmortemMessage, setPostmortemMessage] = useState("");
+  const [postmortemError, setPostmortemError] = useState("");
+
   async function investigate() {
     setLoading(true);
     setError("");
     setResult(null);
+    setPostmortemMessage("");
+    setPostmortemError("");
 
     try {
       const response = await fetch(`${API_URL}/incidents/investigate`, {
@@ -46,6 +60,18 @@ function App() {
 
       const data = await response.json();
       setResult(data);
+
+      const firstHypothesis = data.root_cause_hypotheses?.[0];
+
+      if (firstHypothesis) {
+        setRootCause(firstHypothesis.hypothesis);
+      }
+
+      const firstAction = data.recommended_actions?.[0];
+
+      if (firstAction) {
+        setResolution(firstAction);
+      }
     } catch (err) {
       console.error(err);
 
@@ -54,6 +80,54 @@ function App() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function savePostmortem() {
+    setSavingPostmortem(true);
+    setPostmortemMessage("");
+    setPostmortemError("");
+
+    try {
+      const response = await fetch(`${API_URL}/incidents/postmortem`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          incident_id: incidentId,
+          service,
+          severity,
+          symptoms: symptoms
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          root_cause: rootCause,
+          resolution,
+          runbook,
+          runbook_worked: runbookWorked,
+          notes,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to save post-mortem");
+      }
+
+      setPostmortemMessage(
+        "Post-mortem recorded successfully. IncidentMind can now use this resolution as organizational memory for future incidents."
+      );
+    } catch (err) {
+      console.error(err);
+
+      setPostmortemError(
+        err.message ||
+          "Could not save the post-mortem. Make sure the FastAPI backend is running."
+      );
+    } finally {
+      setSavingPostmortem(false);
     }
   }
 
@@ -67,8 +141,6 @@ function App() {
       text.includes(currentService)
     );
   });
-
-  const resolutionMatch = result?.historical_resolutions?.[0];
 
   return (
     <div className="app">
@@ -85,7 +157,6 @@ function App() {
       </header>
 
       <main>
-        {/* INCIDENT INPUT */}
         <section className="card incident-card">
           <div className="section-title">
             <div>
@@ -156,7 +227,6 @@ function App() {
 
         {result && (
           <>
-            {/* REPORT */}
             <section className="card">
               <div className="section-title">
                 <div>
@@ -175,7 +245,6 @@ function App() {
               </div>
             </section>
 
-            {/* HISTORICAL MATCH */}
             <section className="card historical-match">
               <div className="section-title">
                 <div>
@@ -204,69 +273,8 @@ function App() {
                   No strong historical match was found for this incident.
                 </p>
               )}
-
-              {resolutionMatch && (
-                <div className="historical-resolution">
-                  <span className="match-label">
-                    Previously Recorded Resolution
-                  </span>
-
-                  <p>{resolutionMatch}</p>
-                </div>
-              )}
             </section>
 
-            {/* RUNBOOK MEMORY */}
-            <section className="card runbook-card">
-              <div className="section-title">
-                <div>
-                  <h2>Previously Successful Runbook</h2>
-                  <p>
-                    Operational procedure recovered from historical incident
-                    memory.
-                  </p>
-                </div>
-              </div>
-
-              {result.runbooks?.length ? (
-                result.runbooks.map((runbook, index) => (
-                  <div className="runbook" key={index}>
-                    <div className="runbook-header">
-                      <div>
-                        <h3>{runbook.name}</h3>
-                        <span className="runbook-status">
-                          {runbook.status}
-                        </span>
-                      </div>
-                    </div>
-
-                    <p className="runbook-reason">
-                      {runbook.reason}
-                    </p>
-
-                    <div className="runbook-source">
-                      <span className="match-label">Historical source</span>
-                      <p>{runbook.source_incident}</p>
-                    </div>
-
-                    <h4>Runbook Steps</h4>
-
-                    <ol className="runbook-steps">
-                      {runbook.steps?.map((step, stepIndex) => (
-                        <li key={stepIndex}>{step}</li>
-                      ))}
-                    </ol>
-                  </div>
-                ))
-              ) : (
-                <p className="muted">
-                  No previously successful runbook was identified from the
-                  retrieved historical evidence.
-                </p>
-              )}
-            </section>
-
-            {/* ROOT CAUSES */}
             <section className="card">
               <h2>Root Cause Hypotheses</h2>
 
@@ -293,38 +301,28 @@ function App() {
               )}
             </section>
 
-            {/* INVESTIGATION + ACTIONS */}
             <section className="two-column">
               <div className="card">
                 <h2>Investigation Steps</h2>
 
-                {result.investigation_steps?.length ? (
-                  <ul>
-                    {result.investigation_steps.map((step, index) => (
-                      <li key={index}>{step}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No investigation steps available.</p>
-                )}
+                <ul>
+                  {result.investigation_steps?.map((step, index) => (
+                    <li key={index}>{step}</li>
+                  ))}
+                </ul>
               </div>
 
               <div className="card">
                 <h2>Recommended Actions</h2>
 
-                {result.recommended_actions?.length ? (
-                  <ul>
-                    {result.recommended_actions.map((action, index) => (
-                      <li key={index}>{action}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No recommended actions available.</p>
-                )}
+                <ul>
+                  {result.recommended_actions?.map((action, index) => (
+                    <li key={index}>{action}</li>
+                  ))}
+                </ul>
               </div>
             </section>
 
-            {/* HISTORICAL EVIDENCE */}
             <section className="card">
               <h2>Historical Evidence</h2>
 
@@ -344,6 +342,96 @@ function App() {
                 <p className="muted">
                   No historical evidence was retrieved.
                 </p>
+              )}
+            </section>
+
+            <section className="card postmortem-card">
+              <div className="section-title">
+                <div>
+                  <h2>Record Post-Mortem</h2>
+                  <p>
+                    Save what actually fixed this incident so IncidentMind can
+                    learn from it.
+                  </p>
+                </div>
+
+                <span className="learning-badge">Learning Loop</span>
+              </div>
+
+              <div className="postmortem-intro">
+                <strong>Incident → Resolution → Organizational Memory</strong>
+                <p>
+                  This information will be stored in Hindsight and can be
+                  retrieved during future incident investigations.
+                </p>
+              </div>
+
+              <div className="postmortem-grid">
+                <label>
+                  Root Cause
+                  <textarea
+                    rows="4"
+                    value={rootCause}
+                    onChange={(e) => setRootCause(e.target.value)}
+                    placeholder="What actually caused the incident?"
+                  />
+                </label>
+
+                <label>
+                  Resolution
+                  <textarea
+                    rows="4"
+                    value={resolution}
+                    onChange={(e) => setResolution(e.target.value)}
+                    placeholder="What fixed the incident?"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Runbook Used
+                <input
+                  value={runbook}
+                  onChange={(e) => setRunbook(e.target.value)}
+                  placeholder="Which runbook was used?"
+                />
+              </label>
+
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={runbookWorked}
+                  onChange={(e) => setRunbookWorked(e.target.checked)}
+                />
+                <span>This runbook successfully resolved the incident</span>
+              </label>
+
+              <label>
+                Additional Notes
+                <textarea
+                  rows="4"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional post-mortem notes..."
+                />
+              </label>
+
+              <button
+                className="save-postmortem-button"
+                onClick={savePostmortem}
+                disabled={savingPostmortem}
+              >
+                {savingPostmortem
+                  ? "Saving to Organizational Memory..."
+                  : "Record Post-Mortem"}
+              </button>
+
+              {postmortemMessage && (
+                <div className="success">{postmortemMessage}</div>
+              )}
+
+              {postmortemError && (
+                <div className="error">{postmortemError}</div>
               )}
             </section>
 
