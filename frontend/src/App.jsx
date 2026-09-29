@@ -57,14 +57,6 @@ function App() {
     }
   }
 
-  /*
-   * Find a historical memory that actually mentions
-   * the current incident's service.
-   *
-   * This prevents an unrelated service such as notification-api
-   * from being displayed as a historical match just because
-   * Hindsight returned another incident.
-   */
   const historicalMatch = result?.historical_evidence?.find((item) => {
     const text = (item.evidence || "").toLowerCase();
     const currentService = (result.service || "").toLowerCase();
@@ -76,22 +68,7 @@ function App() {
     );
   });
 
-  /*
-   * Look for a historical resolution associated with
-   * the same service.
-   */
-  const resolutionMatch = result?.historical_evidence?.find((item) => {
-    const text = (item.evidence || "").toLowerCase();
-    const currentService = (result.service || "").toLowerCase();
-
-    return (
-      currentService &&
-      text.includes(currentService) &&
-      (text.includes("resolved") ||
-        text.includes("rolling back") ||
-        text.includes("rolled back"))
-    );
-  });
+  const resolutionMatch = result?.historical_resolutions?.[0];
 
   return (
     <div className="app">
@@ -177,10 +154,9 @@ function App() {
           {error && <div className="error">{error}</div>}
         </section>
 
-        {/* INVESTIGATION RESULT */}
         {result && (
           <>
-            {/* REPORT SUMMARY */}
+            {/* REPORT */}
             <section className="card">
               <div className="section-title">
                 <div>
@@ -219,37 +195,78 @@ function App() {
               </div>
 
               {historicalMatch ? (
-                <>
-                  <div className="match-main">
-                    <div>
-                      <span className="match-label">
-                        Historical Evidence
-                      </span>
-
-                      <p>{historicalMatch.evidence}</p>
-                    </div>
-                  </div>
-
-                  {resolutionMatch && (
-                    <div className="historical-resolution">
-                      <span className="match-label">
-                        Historical Resolution
-                      </span>
-
-                      <p>{resolutionMatch.evidence}</p>
-                    </div>
-                  )}
-                </>
+                <div className="match-main">
+                  <span className="match-label">Historical Evidence</span>
+                  <p>{historicalMatch.evidence}</p>
+                </div>
               ) : (
                 <p className="muted">
                   No strong historical match was found for this incident.
-                  IncidentMind can still provide investigation guidance based
-                  on the available evidence.
+                </p>
+              )}
+
+              {resolutionMatch && (
+                <div className="historical-resolution">
+                  <span className="match-label">
+                    Previously Recorded Resolution
+                  </span>
+
+                  <p>{resolutionMatch}</p>
+                </div>
+              )}
+            </section>
+
+            {/* RUNBOOK MEMORY */}
+            <section className="card runbook-card">
+              <div className="section-title">
+                <div>
+                  <h2>Previously Successful Runbook</h2>
+                  <p>
+                    Operational procedure recovered from historical incident
+                    memory.
+                  </p>
+                </div>
+              </div>
+
+              {result.runbooks?.length ? (
+                result.runbooks.map((runbook, index) => (
+                  <div className="runbook" key={index}>
+                    <div className="runbook-header">
+                      <div>
+                        <h3>{runbook.name}</h3>
+                        <span className="runbook-status">
+                          {runbook.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="runbook-reason">
+                      {runbook.reason}
+                    </p>
+
+                    <div className="runbook-source">
+                      <span className="match-label">Historical source</span>
+                      <p>{runbook.source_incident}</p>
+                    </div>
+
+                    <h4>Runbook Steps</h4>
+
+                    <ol className="runbook-steps">
+                      {runbook.steps?.map((step, stepIndex) => (
+                        <li key={stepIndex}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ))
+              ) : (
+                <p className="muted">
+                  No previously successful runbook was identified from the
+                  retrieved historical evidence.
                 </p>
               )}
             </section>
 
-            {/* ROOT CAUSE HYPOTHESES */}
+            {/* ROOT CAUSES */}
             <section className="card">
               <h2>Root Cause Hypotheses</h2>
 
@@ -330,7 +347,6 @@ function App() {
               )}
             </section>
 
-            {/* SYSTEM STATUS */}
             <div className="demo-note">
               {result.ai_status ||
                 "Investigation powered by organizational incident memory."}
