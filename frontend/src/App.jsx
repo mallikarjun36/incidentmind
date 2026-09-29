@@ -8,6 +8,7 @@ function App() {
   const [service, setService] = useState("payment-api");
   const [severity, setSeverity] = useState("SEV-1");
   const [deployment, setDeployment] = useState("v2.5.0");
+
   const [symptoms, setSymptoms] = useState(
     "high latency\nhigh error rate\ndatabase connection exhaustion"
   );
@@ -46,6 +47,8 @@ function App() {
       const data = await response.json();
       setResult(data);
     } catch (err) {
+      console.error(err);
+
       setError(
         "Could not connect to IncidentMind backend. Make sure FastAPI is running on port 8001."
       );
@@ -53,6 +56,42 @@ function App() {
       setLoading(false);
     }
   }
+
+  /*
+   * Find a historical memory that actually mentions
+   * the current incident's service.
+   *
+   * This prevents an unrelated service such as notification-api
+   * from being displayed as a historical match just because
+   * Hindsight returned another incident.
+   */
+  const historicalMatch = result?.historical_evidence?.find((item) => {
+    const text = (item.evidence || "").toLowerCase();
+    const currentService = (result.service || "").toLowerCase();
+
+    return (
+      text.includes("incident inc-") &&
+      currentService &&
+      text.includes(currentService)
+    );
+  });
+
+  /*
+   * Look for a historical resolution associated with
+   * the same service.
+   */
+  const resolutionMatch = result?.historical_evidence?.find((item) => {
+    const text = (item.evidence || "").toLowerCase();
+    const currentService = (result.service || "").toLowerCase();
+
+    return (
+      currentService &&
+      text.includes(currentService) &&
+      (text.includes("resolved") ||
+        text.includes("rolling back") ||
+        text.includes("rolled back"))
+    );
+  });
 
   return (
     <div className="app">
@@ -69,6 +108,7 @@ function App() {
       </header>
 
       <main>
+        {/* INCIDENT INPUT */}
         <section className="card incident-card">
           <div className="section-title">
             <div>
@@ -137,8 +177,10 @@ function App() {
           {error && <div className="error">{error}</div>}
         </section>
 
+        {/* INVESTIGATION RESULT */}
         {result && (
           <>
+            {/* REPORT SUMMARY */}
             <section className="card">
               <div className="section-title">
                 <div>
@@ -157,6 +199,57 @@ function App() {
               </div>
             </section>
 
+            {/* HISTORICAL MATCH */}
+            <section className="card historical-match">
+              <div className="section-title">
+                <div>
+                  <h2>Historical Match</h2>
+                  <p>
+                    Relevant organizational memory retrieved by IncidentMind.
+                  </p>
+                </div>
+
+                <span
+                  className={
+                    historicalMatch ? "match-badge" : "match-badge no-match"
+                  }
+                >
+                  {historicalMatch ? "Match Found" : "No Strong Match"}
+                </span>
+              </div>
+
+              {historicalMatch ? (
+                <>
+                  <div className="match-main">
+                    <div>
+                      <span className="match-label">
+                        Historical Evidence
+                      </span>
+
+                      <p>{historicalMatch.evidence}</p>
+                    </div>
+                  </div>
+
+                  {resolutionMatch && (
+                    <div className="historical-resolution">
+                      <span className="match-label">
+                        Historical Resolution
+                      </span>
+
+                      <p>{resolutionMatch.evidence}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="muted">
+                  No strong historical match was found for this incident.
+                  IncidentMind can still provide investigation guidance based
+                  on the available evidence.
+                </p>
+              )}
+            </section>
+
+            {/* ROOT CAUSE HYPOTHESES */}
             <section className="card">
               <h2>Root Cause Hypotheses</h2>
 
@@ -183,46 +276,64 @@ function App() {
               )}
             </section>
 
+            {/* INVESTIGATION + ACTIONS */}
             <section className="two-column">
               <div className="card">
                 <h2>Investigation Steps</h2>
 
-                <ul>
-                  {result.investigation_steps?.map((step, index) => (
-                    <li key={index}>{step}</li>
-                  ))}
-                </ul>
+                {result.investigation_steps?.length ? (
+                  <ul>
+                    {result.investigation_steps.map((step, index) => (
+                      <li key={index}>{step}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No investigation steps available.</p>
+                )}
               </div>
 
               <div className="card">
                 <h2>Recommended Actions</h2>
 
-                <ul>
-                  {result.recommended_actions?.map((action, index) => (
-                    <li key={index}>{action}</li>
-                  ))}
-                </ul>
+                {result.recommended_actions?.length ? (
+                  <ul>
+                    {result.recommended_actions.map((action, index) => (
+                      <li key={index}>{action}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No recommended actions available.</p>
+                )}
               </div>
             </section>
 
+            {/* HISTORICAL EVIDENCE */}
             <section className="card">
               <h2>Historical Evidence</h2>
 
-              <div className="evidence-list">
-                {result.historical_evidence?.map((item, index) => (
-                  <div className="history-item" key={index}>
-                    <span className="history-type">
-                      {item.type || "memory"}
-                    </span>
+              {result.historical_evidence?.length ? (
+                <div className="evidence-list">
+                  {result.historical_evidence.map((item, index) => (
+                    <div className="history-item" key={index}>
+                      <span className="history-type">
+                        {item.type || "memory"}
+                      </span>
 
-                    <p>{item.evidence}</p>
-                  </div>
-                ))}
-              </div>
+                      <p>{item.evidence}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">
+                  No historical evidence was retrieved.
+                </p>
+              )}
             </section>
 
+            {/* SYSTEM STATUS */}
             <div className="demo-note">
-              {result.ai_status}
+              {result.ai_status ||
+                "Investigation powered by organizational incident memory."}
             </div>
           </>
         )}
